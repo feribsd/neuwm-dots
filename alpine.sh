@@ -55,7 +55,6 @@ doas apk add --no-cache \
     pixman-dev \
     libdrm-dev \
     eudev-dev \
-    xcb-dev \
     xcb-util-dev \
     xcb-util-wm-dev \
     xcb-util-image-dev \
