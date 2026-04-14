@@ -52,14 +52,10 @@ doas apk add --no-cache \
     pkgconfig \
     wayland-dev \
     libinput-dev \
-    xkbcommon-dev \
     pixman-dev \
     libdrm-dev \
     eudev-dev \
     xcb-util-dev \
-    xcb-util-composite-dev \
-    xcb-util-ewmh-dev \
-    xcb-util-icccm-dev \
     lua-dev \
     fontconfig-dev \
     linux-headers
