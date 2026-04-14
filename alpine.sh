@@ -55,6 +55,7 @@ doas apk add --no-cache \
     pixman-dev \
     libdrm-dev \
     eudev-dev \
+    xcb-dev \
     xcb-util-dev \
     xcb-util-wm-dev \
     xcb-util-image-dev \
@@ -73,19 +74,20 @@ cd "$BUILD_DIR"
 log_info "Working directory: $BUILD_DIR"
 
 # Step 3: Clone repositories
-declare -A repos
-repos[wayland-protocols]="https://gitlab.freedesktop.org/wayland/wayland-protocols.git"
-repos[wld]="https://git.sr.ht/~dlm/wld"
-repos[neuwld]="https://git.sr.ht/~shrub900/neuwld"
-repos[swc]="https://git.sr.ht/~dlm/swc"
-repos[neuwm]="https://git.sr.ht/~pfr/neuwm"
-repos[neumenu]="https://git.sr.ht/~uint/neumenu"
-repos[swall]="https://git.sr.ht/~uint/swall"
-repos[mojito]="https://git.sr.ht/~dlm/mojito"
-repos[hst]="https://git.sr.ht/~dlm/hst"
+repos_wayland_protocols="https://gitlab.freedesktop.org/wayland/wayland-protocols.git"
+repos_wld="https://git.sr.ht/~dlm/wld"
+repos_neuwld="https://git.sr.ht/~shrub900/neuwld"
+repos_swc="https://git.sr.ht/~dlm/swc"
+repos_neuwm="https://git.sr.ht/~pfr/neuwm"
+repos_neumenu="https://git.sr.ht/~uint/neumenu"
+repos_swall="https://git.sr.ht/~uint/swall"
+repos_mojito="https://git.sr.ht/~dlm/mojito"
+repos_hst="https://git.sr.ht/~dlm/hst"
 
-for repo_name in "${!repos[@]}"; do
-    repo_url="${repos[$repo_name]}"
+repos_list="wayland-protocols wld neuwld swc neuwm neumenu swall mojito hst"
+
+for repo_name in $repos_list; do
+    eval repo_url="\$repos_$repo_name"
     log_info "Cloning $repo_name..."
     if [ -d "$BUILD_DIR/$repo_name" ]; then
         log_warn "$repo_name already exists, skipping clone"
@@ -97,9 +99,9 @@ done
 # Step 4: Build in dependency order
 # Note: wld must be built first as it's a dependency for others
 
-declare -a build_order=(wayland-protocols wld neuwld swc neuwm neumenu swall mojito hst)
+build_order="wayland-protocols wld neuwld swc neuwm neumenu swall mojito hst"
 
-for project in "${build_order[@]}"; do
+for project in $build_order; do
     if [ ! -d "$BUILD_DIR/$project" ]; then
         log_warn "Skipping $project (not cloned)"
         continue
