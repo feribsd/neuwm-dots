@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+# Don't exit on first error - continue building and report issues
 
 # neuwm Build Script for Alpine Linux
 # This script clones and builds all dependencies and neuwm
@@ -25,6 +25,12 @@ log_error() {
 BUILD_DIR="${BUILD_DIR:-$HOME/windowmanagerdep}"
 INSTALL_PREFIX="${INSTALL_PREFIX:-/usr/local}"
 JOBS="${JOBS:-$(nproc)}"
+
+# Set up environment for building
+export PKG_CONFIG_PATH="$INSTALL_PREFIX/lib/pkgconfig:$INSTALL_PREFIX/share/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig"
+export LD_LIBRARY_PATH="$INSTALL_PREFIX/lib:$LD_LIBRARY_PATH"
+export CFLAGS="-I$INSTALL_PREFIX/include $CFLAGS"
+export LDFLAGS="-L$INSTALL_PREFIX/lib $LDFLAGS"
 
 log_info "Starting neuwm build for Alpine Linux"
 log_info "Build directory: $BUILD_DIR"
@@ -77,14 +83,14 @@ log_info "Working directory: $BUILD_DIR"
 repos_wayland_protocols="https://gitlab.freedesktop.org/wayland/wayland-protocols.git"
 repos_wld="https://git.sr.ht/~dlm/wld"
 repos_neuwld="https://git.sr.ht/~shrub900/neuwld"
-repos_swc="https://git.sr.ht/~dlm/swc"
+repos_neuswc="https://git.sr.ht/~pfr/neuswc"
 repos_neuwm="https://git.sr.ht/~pfr/neuwm"
 repos_neumenu="https://git.sr.ht/~uint/neumenu"
 repos_swall="https://git.sr.ht/~uint/swall"
 repos_mojito="https://git.sr.ht/~dlm/mojito"
 repos_hst="https://git.sr.ht/~dlm/hst"
 
-repos_list="wayland-protocols wld neuwld swc neuwm neumenu swall mojito hst"
+repos_list="wayland-protocols wld neuwld neuswc neuwm neumenu swall mojito hst"
 
 for repo_name in $repos_list; do
     eval repo_url="\$repos_$repo_name"
@@ -99,7 +105,7 @@ done
 # Step 4: Build in dependency order
 # Note: wld must be built first as it's a dependency for others
 
-build_order="wayland-protocols wld neuwld swc neuwm neumenu swall mojito hst"
+build_order="wayland-protocols wld neuwld neuswc neuwm neumenu swall mojito hst"
 
 for project in $build_order; do
     if [ ! -d "$BUILD_DIR/$project" ]; then
@@ -110,24 +116,60 @@ for project in $build_order; do
     log_info "Building $project..."
     cd "$BUILD_DIR/$project"
     
+    # Special handling for neuwm - it requires neuswc (patched swc)
+    if [ "$project" = "neuwm" ]; then
+        log_info "neuwm requires neuswc (patched compositor) for compatibility"
+    fi
+    
     # Detect build system and build accordingly
     if [ -f "meson.build" ]; then
         log_info "Using Meson/Ninja for $project"
-        meson setup --prefix="$INSTALL_PREFIX" build || {
-            log_warn "Meson setup failed for $project, trying alternative..."
-            meson setup --prefix="$INSTALL_PREFIX" -Dprefix="$INSTALL_PREFIX" build || true
-        }
-        ninja -C build -j "$JOBS" || log_error "Build failed for $project"
-        doas ninja -C build install || log_error "Install failed for $project"
+        # Remove build dir if it exists to avoid issues
+        if [ -d "build" ]; then
+            rm -rf build
+        fi
+        
+        if ! meson setup --prefix="$INSTALL_PREFIX" build 2>&1; then
+            log_warn "Meson setup failed for $project, trying with reconfigure..."
+            meson setup --wipe --prefix="$INSTALL_PREFIX" build 2>&1 || {
+                log_error "Build failed for $project"
+                continue
+            }
+        fi
+        
+        if ! ninja -C build -j "$JOBS" 2>&1; then
+            log_error "Build failed for $project - check logs above"
+            continue
+        fi
+        
+        if ! doas ninja -C build install 2>&1; then
+            log_error "Install failed for $project"
+            continue
+        fi
     elif [ -f "Makefile" ] || [ -f "makefile" ]; then
         log_info "Using Make for $project"
-        make -j "$JOBS" PREFIX="$INSTALL_PREFIX" || log_error "Make failed for $project"
-        doas make PREFIX="$INSTALL_PREFIX" install || log_error "Install failed for $project"
+        if ! make -j "$JOBS" PREFIX="$INSTALL_PREFIX" 2>&1; then
+            log_error "Make failed for $project"
+            continue
+        fi
+        if ! doas make PREFIX="$INSTALL_PREFIX" install 2>&1; then
+            log_error "Install failed for $project"
+            continue
+        fi
     elif [ -f "CMakeLists.txt" ]; then
         log_info "Using CMake for $project"
-        cmake -B build -DCMAKE_INSTALL_PREFIX="$INSTALL_PREFIX" || log_error "CMake config failed for $project"
-        make -C build -j "$JOBS" || log_error "Build failed for $project"
-        doas make -C build install || log_error "Install failed for $project"
+        if ! cmake -B build -DCMAKE_INSTALL_PREFIX="$INSTALL_PREFIX" 2>&1; then
+            log_error "CMake config failed for $project"
+            continue
+        fi
+        if ! make -C build -j "$JOBS" 2>&1; then
+            log_error "Build failed for $project"
+            continue
+        fi
+        if ! doas make -C build install 2>&1; then
+            log_error "Install failed for $project"
+            continue
+        fi
     else
         log_warn "Unknown build system for $project, skipping..."
     fi
