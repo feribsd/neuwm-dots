@@ -69,6 +69,7 @@ log_info "Working directory: $BUILD_DIR"
 
 # Step 3: Clone repositories
 declare -A repos
+repos[wayland-protocols]="https://gitlab.freedesktop.org/wayland/wayland-protocols.git"
 repos[wld]="https://git.sr.ht/~dlm/wld"
 repos[neuwld]="https://git.sr.ht/~shrub900/neuwld"
 repos[neuwm]="https://git.sr.ht/~pfr/neuwm"
@@ -90,7 +91,7 @@ done
 # Step 4: Build in dependency order
 # Note: wld must be built first as it's a dependency for others
 
-declare -a build_order=(wld neuwld neuwm neumenu swall mojito hst)
+declare -a build_order=(wayland-protocols wld neuwld neuwm neumenu swall mojito hst)
 
 for project in "${build_order[@]}"; do
     if [ ! -d "$BUILD_DIR/$project" ]; then
