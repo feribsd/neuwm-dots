@@ -43,7 +43,8 @@ if ! command -v apk &> /dev/null; then
     exit 1
 fi
 
-# Install build tools and dev packages available in apk
+
+# Ensure we have the basics + the specific Wayland/XKB devs
 doas apk add --no-cache \
     build-base \
     git \
@@ -51,6 +52,8 @@ doas apk add --no-cache \
     ninja \
     pkgconfig \
     wayland-dev \
+    libxkbcommon-dev \
+    wayland-protocols \
     libinput-dev \
     pixman-dev \
     libdrm-dev \
