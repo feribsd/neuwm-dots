@@ -87,10 +87,9 @@ repos_neuswc="https://git.sr.ht/~pfr/neuswc"
 repos_neuwm="https://git.sr.ht/~pfr/neuwm"
 repos_neumenu="https://git.sr.ht/~uint/neumenu"
 repos_swall="https://git.sr.ht/~uint/swall"
-repos_mojito="https://git.sr.ht/~dlm/mojito"
 repos_hst="https://git.sr.ht/~dlm/hst"
 
-repos_list="wayland-protocols wld neuwld neuswc neuwm neumenu swall mojito hst"
+repos_list="wayland-protocols wld neuwld neuswc neuwm neumenu swall hst"
 
 for repo_name in $repos_list; do
     eval repo_url="\$repos_$repo_name"
@@ -105,7 +104,10 @@ done
 # Step 4: Build in dependency order
 # Note: wld must be built first as it's a dependency for others
 
-build_order="wayland-protocols wld neuwld neuswc neuwm neumenu swall mojito hst"
+# Core dependencies: wayland-protocols wld neuwld neuswc
+# neuwm and utilities: neuwm neumenu swall hst
+# Optional: mojito (not in original requirements, may fail if swc headers missing)
+build_order="wayland-protocols wld neuwld neuswc neuwm neumenu swall hst"
 
 for project in $build_order; do
     if [ ! -d "$BUILD_DIR/$project" ]; then
@@ -119,6 +121,16 @@ for project in $build_order; do
     # Special handling for neuwm - it requires neuswc (patched swc)
     if [ "$project" = "neuwm" ]; then
         log_info "neuwm requires neuswc (patched compositor) for compatibility"
+    fi
+    
+    # After neuswc builds, ensure headers are available
+    if [ "$project" = "neuswc" ]; then
+        log_info "Verifying neuswc headers were generated..."
+        if [ -f "$INSTALL_PREFIX/include/swc-client-protocol.h" ]; then
+            log_info "swc-client-protocol.h found"
+        else
+            log_warn "swc-client-protocol.h not found - mojito may fail to build"
+        fi
     fi
     
     # Detect build system and build accordingly
@@ -148,10 +160,30 @@ for project in $build_order; do
         fi
     elif [ -f "Makefile" ] || [ -f "makefile" ]; then
         log_info "Using Make for $project"
-        if ! make -j "$JOBS" PREFIX="$INSTALL_PREFIX" 2>&1; then
-            log_error "Make failed for $project"
-            continue
+        
+        # Special handling for mojito - needs swc headers
+        if [ "$project" = "mojito" ]; then
+            log_info "Building mojito with swc support..."
+            if ! make -j "$JOBS" PREFIX="$INSTALL_PREFIX" CFLAGS="-I$INSTALL_PREFIX/include $CFLAGS" LDFLAGS="-L$INSTALL_PREFIX/lib $LDFLAGS" 2>&1; then
+                log_warn "mojito build failed - checking for swc-client-protocol.h..."
+                if [ -f "$INSTALL_PREFIX/include/swc-client-protocol.h" ]; then
+                    log_info "Header found, retrying with explicit include..."
+                    make -j "$JOBS" PREFIX="$INSTALL_PREFIX" CFLAGS="-I$INSTALL_PREFIX/include -I$INSTALL_PREFIX/share/wayland-protocols $CFLAGS" 2>&1 || {
+                        log_error "mojito build failed"
+                        continue
+                    }
+                else
+                    log_error "swc-client-protocol.h not found in $INSTALL_PREFIX/include - neuswc may not have installed correctly"
+                    continue
+                fi
+            fi
+        else
+            if ! make -j "$JOBS" PREFIX="$INSTALL_PREFIX" 2>&1; then
+                log_error "Make failed for $project"
+                continue
+            fi
         fi
+        
         if ! doas make PREFIX="$INSTALL_PREFIX" install 2>&1; then
             log_error "Install failed for $project"
             continue
