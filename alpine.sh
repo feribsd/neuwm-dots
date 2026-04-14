@@ -19,12 +19,14 @@ log_warn() {
 
 log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
+    exit 1
 }
 
 # Configuration
 BUILD_DIR="${BUILD_DIR:-$HOME/windowmanagerdep}"
 INSTALL_PREFIX="${INSTALL_PREFIX:-/usr/local}"
 JOBS="${JOBS:-$(nproc)}"
+export PKG_CONFIG_PATH="$INSTALL_PREFIX/lib/pkgconfig:$INSTALL_PREFIX/share/pkgconfig:$PKG_CONFIG_PATH"
 
 log_info "Starting neuwm build for Alpine Linux"
 log_info "Build directory: $BUILD_DIR"
@@ -40,9 +42,7 @@ fi
 log_info "Installing system dependencies via apk..."
 if ! command -v apk &> /dev/null; then
     log_error "apk package manager not found. This script requires Alpine Linux."
-    exit 1
 fi
-
 
 # Ensure we have the basics + the specific Wayland/XKB devs
 doas apk add --no-cache \
@@ -60,6 +60,8 @@ doas apk add --no-cache \
     eudev-dev \
     xcb-util-dev \
     lua-dev \
+    luajit-dev \
+    ncurses \
     fontconfig-dev \
     linux-headers
 
@@ -72,8 +74,8 @@ log_info "Working directory: $BUILD_DIR"
 
 # Step 3: Clone repositories
 declare -A repos
-repos[wayland-protocols]="https://gitlab.freedesktop.org/wayland/wayland-protocols.git"
-repos[wld]="https://git.sr.ht/~dlm/wld"
+repos[swc]="https://github.com/michaelforney/swc.git"
+repos[wld]="https://github.com/michaelforney/wld.git"
 repos[neuwld]="https://git.sr.ht/~shrub900/neuwld"
 repos[neuwm]="https://git.sr.ht/~pfr/neuwm"
 repos[neumenu]="https://git.sr.ht/~uint/neumenu"
@@ -92,9 +94,7 @@ for repo_name in "${!repos[@]}"; do
 done
 
 # Step 4: Build in dependency order
-# Note: wld must be built first as it's a dependency for others
-
-declare -a build_order=(wayland-protocols wld neuwld neuwm neumenu swall mojito hst)
+declare -a build_order=(swc wld neuwld neuwm neumenu swall mojito hst)
 
 for project in "${build_order[@]}"; do
     if [ ! -d "$BUILD_DIR/$project" ]; then
@@ -104,13 +104,19 @@ for project in "${build_order[@]}"; do
     
     log_info "Building $project..."
     cd "$BUILD_DIR/$project"
+
+    # Fix compiler flags for swall on GCC
+    if [ "$project" == "swall" ]; then
+        sed -i 's/-fcolor-diagnostics//g' Makefile || true
+    fi
     
     # Detect build system and build accordingly
     if [ -f "meson.build" ]; then
         log_info "Using Meson/Ninja for $project"
+        rm -rf build
         meson setup --prefix="$INSTALL_PREFIX" build || {
             log_warn "Meson setup failed for $project, trying alternative..."
-            meson setup --prefix="$INSTALL_PREFIX" -Dprefix="$INSTALL_PREFIX" build || true
+            meson setup --prefix="$INSTALL_PREFIX" -Dprefix="$INSTALL_PREFIX" build
         }
         ninja -C build -j "$JOBS" || log_error "Build failed for $project"
         doas ninja -C build install || log_error "Install failed for $project"
